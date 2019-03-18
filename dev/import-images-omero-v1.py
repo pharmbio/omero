@@ -171,10 +171,14 @@ def uploadImages(file_list):
 # direct with python API and not via the /bin/omero command line client)
 #
 def getOmeroConn():
-  conn = BlitzGateway("root", omero_rootpass, host="localhost", port="4064")
-  conn.connect()
-  return conn
-
+  try:
+    conn = BlitzGateway("root", omero_rootpass, host="localhost", port="4064")
+    conn.connect()
+    return conn
+  except Exception as e:
+    logging.error("Something went wrong when getting OMERO-connection, is server up? Somethimes it takes 30 sek to start.")
+    logging.error("Exception: " + str(e))
+    raise e
 
 def searchObjects(conn, obj_types, text, fieldsxx):
   return conn.searchObjects(obj_types, text, fields=["name"])
@@ -430,6 +434,8 @@ def add_plate_metadata(images, conn):
 #
 #
 #
+conn = None
+
 try:
   
   # 
@@ -479,7 +485,9 @@ try:
 		    logging.info("Plate already in DB: " + metadata['plate']);
 		    sys.exit("# Exit here")
 
-
+except Exception as e:
+  print(e)
+  
 finally:
   if conn is not None:
     conn.close()
