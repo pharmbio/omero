@@ -1,4 +1,4 @@
-#Development setup for our OMERO-server python 2.7 scripts
+# Development setup for our OMERO-server python 2.7 scripts
 
 Start development version of omero-server, omero-web, and postgres
 
