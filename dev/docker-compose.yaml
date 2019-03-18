@@ -9,13 +9,15 @@ volumes:
     driver: local
     driver_opts:
       type: none
-      device: "${PWD}/share/mikro/IMX-dev-dataset"
+      device: "${PWD}/share/mikro"
       o: bind
 
 services:
   postgres:
-    image: postgres:10.5
-    restart: always
+    image: postgres:10.7
+    restart: "no"
+    ports:
+      - 5432:5432
     volumes:
       - omero-db-dev:/var/lib/postgresql/data
     environment:
@@ -24,8 +26,8 @@ services:
     mem_limit: 2g
 
   omero-server:
-    image: openmicroscopy/omero-server:5.4.7
-    restart: always
+    image: openmicroscopy/omero-server:5.4.10
+    restart: "no"
     container_name: omero-server-dev
     ports:
       - 4063:4063
@@ -37,13 +39,16 @@ services:
       - postgres:db
     volumes:
       - omero-data-dev:/OMERO
-      - omero-data-bind-dev:/share/mikro/IMX
+      - omero-data-bind-dev:/share/mikro
       - ${PWD}:/scripts
     environment:
       - CONFIG_omero_db_user=postgres
       - CONFIG_omero_db_pass=easypeasy
       - CONFIG_omero_db_name=postgres
       - ROOTPASS=devpass
+      # Export path for easier development
+      - PYTHONPATH=${PYTHONPATH}:/opt/omero/server/OMERO.server/lib/python/
+
     labels:
       - traefik.enable=false
     cpus: 2
@@ -52,8 +57,8 @@ services:
     mem_limit: 4g
 
   omero-web:
-    image: openmicroscopy/omero-web-standalone:5.4.7
-    restart: always
+    image: openmicroscopy/omero-web-standalone:5.4.10
+    restart: "no"
     ports:
       - 4080:4080
     expose:
@@ -63,7 +68,7 @@ services:
     links:
       - omero-server:omero_server
     environment:
-      - OMEROHOST=130.238.92.235
+      - OMEROHOST=omero_server
     cpus: 2
     mem_limit: 2g
 
