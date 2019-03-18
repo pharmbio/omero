@@ -40,6 +40,9 @@ from omero.gateway import BlitzGateway
 from omero.cli import cli_login
 from omero.rtypes import rstring, rint, rdouble, rtime
 
+# read password from environment
+omero_rootpass = os.environ['ROOTPASS']
+
 #
 # Adopted from: https://github.com/HASTE-project/haste-image-analysis-container2/tree/master/haste/image_analysis_container2/filenames
 # path example
@@ -72,9 +75,6 @@ __pattern_path_and_file   = re.compile('^'
                             ,
                             re.IGNORECASE)  # Windows has case-insensitive filenames
 
-
-# read password from environment
-omero_rootpass = os.environ['ROOTPASS']
 
 def parse_path_plate_date(path):
   match = re.search(__pattern_path_plate_date, path)
@@ -180,7 +180,10 @@ def searchObjects(conn, obj_types, text, fieldsxx):
   return conn.searchObjects(obj_types, text, fields=["name"])
 
 #
-# Throws error if more than one object is returned
+# Older version of search (it is not working as expected, returning
+# more than one result even if perfect match only should return one
+#
+# Throws Exception if more than one object is returned
 #
 def getID_v1(conn, obj_types, text, fields):
   logging.info("text:" + text)
@@ -192,7 +195,20 @@ def getID_v1(conn, obj_types, text, fields):
   if len(result) > 1:
     raise Exception('Get ID returned more than 1 results')
   return result.getId()
+  
+#
+# Older version of search (it is not working as expected, returning
+# more than one result even if perfect match only should return one
+#
+def getPlateID_v1(conn, name):
+  return getID(conn, ["Plate"], name, fields=("name",))
+  
 
+#
+# Searches with OMERO findAllByQuery method
+#
+# Throws Exception if more than one object is returned
+#
 def getID(conn, table, search, field):
   qs = conn.getQueryService()
   params = omero.sys.Parameters()
@@ -205,19 +221,16 @@ def getID(conn, table, search, field):
   return result[0].getId()
 
 #
-# TODO Throws error if more than one result is found
+# Throws Exception if more than one result is found
 #
 def getImageID(conn, name):
   return getID(conn, "Image", name, "name")
 
 #
-# TODO Throws error if more than one result is found
+# Throws Exception if more than one result is found
 #
 def getPlateID(conn, name):
   return getID(conn, "Plate", name, "name")
-
-def getPlateID_v1(conn, name):
-  return getID(conn, ["Plate"], name, fields=("name",))
 
 #
 # Returns list of files
