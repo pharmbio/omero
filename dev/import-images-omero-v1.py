@@ -451,6 +451,7 @@ try:
 
   # Get all subdirs (these are the top plate dir)
   plate_dirs = get_subdirs(proj_image_dir)
+  logging.debug("plate_dirs" + str(plate_dirs))
   for plate_dir in plate_dirs:
     plate_subdirs = get_subdirs(plate_dir)
     for plate_date_dir in plate_subdirs:
@@ -480,5 +481,7 @@ try:
 
 
 finally:
-  conn.close()
+  if conn is not None:
+    conn.close()
+    
   logging.info("Done script")
