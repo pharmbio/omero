@@ -423,6 +423,13 @@ def add_plate_metadata(images, conn):
 
     image_v2.linkAnnotation(map_ann)
 
+#
+#
+#
+#  Main entry for script
+#
+#
+#
 try:
   
   # 
