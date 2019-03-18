@@ -5,12 +5,19 @@
 # from http://www.openmicroscopy.org/community/viewtopic.php?f=6&t=8407
 # Uses code from https://github.com/openmicroscopy/openmicroscopy/blob/develop/components/tools/OmeroPy/src/omero/testlib/__init__.py
 
+# https://docs.openmicroscopy.org/omero/5.4.10/users/cli/containers-annotations.html
+# https://docs.openmicroscopy.org/omero/5.4.10/developers/Python.html
+
 # API
 # https://downloads.openmicroscopy.org/omero/5.4.10/api/python/
 #
+#
+# docker-compose up
+# docker exec -it omero-server-dev bash
+#
 # Python path
 # export PYTHONPATH=$PYTHONPATH:/home/anders/projekt/pharmbio/OMERO/dev/OMERO.server-5.4.10-ice36-b105/lib/python
-# export PYTHONPATH=$PYTHONPATH:/opt/omero/server/OMERO.server/lib/python/ 
+# export PYTHONPATH=$PYTHONPATH:/opt/omero/server/OMERO.server/lib/python/
 # export OMERO_DEV_PASSW=devpass
 # /scripts/import-cli-version3.py
 
@@ -23,38 +30,55 @@ import platform
 import os
 from omero.gateway import BlitzGateway
 from omero.cli import cli_login
+from omero.rtypes import rstring, rint
 import logging
 import sys
 import cStringIO
 import json
+# from IPython.core.debugger import Tracer
 
 def parse_json_result(text):
   json_out=[]
+  logging.info("text" + text)
   if text != "":
     json_out = json.loads(text)
-  
+
   debug=False
   if debug == True:
     print(json.dumps(json_out, indent=4, sort_keys=True))
-    
+
   return json_out
 
+def retval2id(text):
+  retval = ""
+  logging.info("text" + text)
+  if text != "":
+    array = text.split(":")
+    id = array[1].strip()
+    retval = id
+
+  return retval
+
 def execOmeroCommand(args):
+  logging.info("exec command:" + str(args))
   stdout_ = sys.stdout
   redirected_stdout = cStringIO.StringIO()
   sys.stdout = redirected_stdout
-	
-  password = os.environ['OMERO_DEV_PASSW']
-  with cli_login("--server","localhost","--port", "4064", "--user","root", "--password", password ) as cli:
+  retval = ""
 
+  password = os.environ['ROOTPASS']
+  with cli_login("--server","localhost","--port", "4064", "--user","root", "--password", password ) as cli:
+    logging.info("Before command")
     cli.invoke(args)
-      
-    # restore stream
-    sys.stdout = stdout_
-    
+    logging.info("After command")
     retval = redirected_stdout.getvalue()
-    return retval
-    
+    cli.close()
+
+  # restore stream
+  sys.stdout = stdout_
+  logging.info("retval " + retval)
+  return retval
+
 
 def searchOmero(object_type, searchterm):
   args = ["search",
@@ -64,24 +88,22 @@ def searchOmero(object_type, searchterm):
             "name",
             "--style",
             "json"
-           ]  
+           ]
   searchresult = execOmeroCommand(args)
-  
+
   return parse_json_result(searchresult)
 
-  
+
 def createObject(object_type, name):
   args = ["obj",
           "new",
           object_type,
-          "name=" + name,
-          "--style",
-          "json"
-          ]  
+          "name=" + name
+          ]
   retval = execOmeroCommand(args)
-  
-  return parse_json_result(retval)
-  
+
+  return retval2id(retval)
+
 def getID(object_type, name):
   jsonlist = searchOmero(object_type, name)
   if len(jsonlist) > 0:
@@ -97,25 +119,157 @@ def existsInDB(object_type, name):
   else:
 	  return True
 
+def getProjectID(name):
+  return getID("Project", name)
+
+def getDatasetID(name):
+  return getID("Dataset", name)
+
+def getImageID(name):
+  return getID("Image", name)
+
 def imageExists(name):
   return existsInDB("Image", name)
-  
+
 def projectExists(name):
   return existsInDB("Project", name)
-  
+
 def datasetExists(name):
   return existsInDB("Dataset", name)
-  
+
+def projectCreate(name):
+  return createObject("Project", name)
+
+def datasetCreate(name):
+  return createObject("Dataset", name)
+
+def getOrCreateProject(name):
+  id = getProjectID(name)
+  if id is None:
+    id = projectCreate(name)
+  return id
+
+def getOrCreateDataset(name):
+  id = getDatasetID(name)
+  if id is None:
+    id = datasetCreate(name)
+  return id
+
+def getOmeroConn():
+  password = os.environ['ROOTPASS']
+  conn = BlitzGateway("root", password, host="localhost", port="4064")
+  conn.connect()
+  return conn
+
+def addMapAnnotation(imageID, key_value_data):
+  conn = getOmeroConn()
+  map_ann = omero.gateway.MapAnnotationWrapper(conn)
+  # Use 'client' namespace to allow editing in Insight & web
+  namespace = omero.constants.metadata.NSCLIENTMAPANNOTATION
+  map_ann.setNs(namespace)
+  map_ann.setValue(key_value_data)
+  map_ann.save()
+
+  fileToAnnotate = conn.getObject("Image", imageID)
+  # NB: only link a client map annotation to a single object
+  fileToAnnotate.linkAnnotation(map_ann)
+
+  logging.info("Annotated OK")
+  conn.close()
+
+# Only return first id for now
+def searchObj(obj_types, text, fields):
+  conn = getOmeroConn()
+  retval = None
+  for i in conn.searchObjects(obj_types, text, fields):
+    # print i.OMERO_CLASS, i.getName(), i.getId()
+    retval = i.getId()
+    break
+  conn.close()
+  return retval
+
+def searchDS(name):
+  return searchObj(["Dataset"], name, fields=("name",))
+
+def searchScreen(name):
+  return searchObj(["Screen"], name, fields=("name",))
+
+def searchPlate(name):
+  return searchObj(["Plate"], name, fields=("name",))
+
+def searchWell(name):
+  return searchObj(["Well"], name, fields=("externalDescription",))
+
+def searchWellSample(name):
+  return searchObj(["WellSample"], name, fields=("name",))
+
+def createObj(obj, name):
+  conn = getOmeroConn()
+  obj.setName(rstring(name))
+  obj = conn.getUpdateService().saveAndReturnObject(obj)
+  obj_id = obj.id.getValue()
+  conn.close()
+  return obj_id
+
+def createDataset(name):
+  return createObj(omero.model.DatasetI(), name)
+
+def createScreen(name):
+  return createObj(omero.model.ScreenI(), name)
+
+def createPlate(name):
+  return createObj(omero.model.PlateI(), name)
+
+def createWell(name, plateID):
+  conn = getOmeroConn()
+  obj = omero.model.WellI()
+  obj.setExternalDescription(rstring(name))
+  obj.setColumn(rint(0))
+  obj.setRow(rint(0))
+  plate = conn.getObject("Plate", plateID)
+  obj.setPlate(omero.model.PlateI(plate.getId(), False))
+  obj = conn.getUpdateService().saveAndReturnObject(obj)
+  obj_id = obj.id.getValue()
+  conn.close()
+  return obj_id
+
+def createWellSample(wellID, plateID, imageID):
+  conn = getOmeroConn()
+
+  image = omero.model.ImageI(imageID, False)
+  plate = omero.model.PlateI(plateID, False)
+
+
+  well = omero.model.WellI()
+  well.plate = plate
+  well.column = rint(1)
+  well.row = rint(1)
+  savedWell = conn.getUpdateService().saveAndReturnObject(well)
+
+  ws = omero.model.WellSampleI()
+  ws.setImage(image)
+  #ws.image = omero.model.ImageI(image.id, False)
+  ws.well = savedWell
+  savedWell.addWellSample(ws)
+  savedWS = conn.getUpdateService().saveAndReturnObject(ws)
+
+  obj_id = savedWell.id.getValue()
+  conn.close()
+  return obj_id
+
+
+#
+# Filename examples
+# 181214-KOday7- 40X- H2O2- Glu     _E02_s1_w14C0B5387-40BB-433A-9981-204DD0A2C244.tif
+# 190131-U2OS-   20X- CopyAP009068 _B02_s4_w1602D3899-2E43-4530-8A73-2C1A8A49ED1E.tif
+# 181212-ACHN-   20X- BpA- HD-DB-high  _B02_s8_w324263B43-90B5-4388-8D6C-B5B2EA8BE7C1.tif
+#
 def parseImagename(name):
-  # Filename examples
-  # 181214-KOday7- 40X- H2O2- Glu     _E02_s1_w14C0B5387-40BB-433A-9981-204DD0A2C244.tif
-  # 190131-U2OS-   20X- CopyAP009068 _B02_s4_w1602D3899-2E43-4530-8A73-2C1A8A49ED1E.tif
-  # 181212-ACHN-   20X- BpA- HD-DB-high  _B02_s8_w324263B43-90B5-4388-8D6C-B5B2EA8BE7C1.tif
-  
+
   dash_split=name.split("-")
   undersc_split=name.split("_")
-  
-  project="proj_" + dash_split[1]
+
+  project="proj_" + "exp_wide" # this is part of should be path
   dataset="ds_" + dash_split[1]
   screen="scr_" + dash_split[1]
   plate=dash_split[3]
@@ -125,121 +279,135 @@ def parseImagename(name):
   channel=channel_and_more[1]
   date=dash_split[0]
   magnification=dash_split[2]
-  
-  return {'project':project, 'dataset':dataset, 'screen':screen, 
+
+  return {'project':project, 'dataset':dataset, 'screen':screen,
           'plate':plate, 'well':well, 'wellsample':wellsample,
           'channel':channel, 'date':date, 'magnification':magnification}
-         
-def uploadImage(filepath):
+
+def uploadImage(filepath, datasetID):
   filename = os.path.basename(filepath)
-  parsed_name = parseImagename(filename)
-  
-  print(parsed_name)
-  
-  #            ["import",
-  #             "--quiet",
-  #             "--transfer", "ln_s",
-  #             "--skip","all",
-  #             "-T", "Dataset:name:New-Dataset",
-  #             filepath]
-  # 
-  # 
-  # execOmeroCommand(args):
-  
+
+  logging.info("datasetID="+ str(datasetID))
+
+  args = ["import",
+          "--quiet",
+          "--transfer", "ln_s",
+          "--skip","all",
+          "-T", "Dataset:id:" + str(datasetID),
+          filepath
+          ]
+
+  result = execOmeroCommand(args)
+
+def linkDatasetToProj(datasetID, projectID):
+  conn = getOmeroConn()
+  project = conn.getObject("Project", projectID)
+  link = omero.model.ProjectDatasetLinkI()
+  link.setParent(omero.model.ProjectI(project.getId(), False))
+
+  dataset = conn.getObject("Dataset", datasetID)
+  link.setChild(omero.model.DatasetI(dataset.getId(), False))
+  conn.getUpdateService().saveObject(link)
+  conn.close()
+
+def linkPlateToScreen(plateID, screenID):
+  conn = getOmeroConn()
+  screen = conn.getObject("Screen", screenID)
+  plate = conn.getObject("Plate", plateID)
+  link = omero.model.ScreenPlateLinkI()
+  link.setParent(omero.model.ScreenI(screen.getId(), False))
+  link.setChild(omero.model.PlateI(plate.getId(), False))
+  conn.getUpdateService().saveObject(link)
+  conn.close()
+
+def linkWellToPlate(wellID, plateID):
+  conn = getOmeroConn()
+  plate = conn.getObject("Plate", plateID)
+  well = conn.getObject("Well", screenID)
+  link = omero.model.PlateWellLinkI()
+  link.setParent(omero.model.PlateI(plate.getId(), False))
+  link.setChild(omero.model.WellI(well.getId(), False))
+  conn.getUpdateService().saveObject(link)
+  conn.close()
+
+
+#def linkPlateToScreen(plateID, screenID):
+#  conn = getOmeroConn()
+#  screen = conn.getObject("Screen", screenID)
+#  plate = conn.getObject("Plate", plateID)
+#  screen.linkPlate(plate)
+#  conn.close()
+
 
 def uploadImageUnique(imagefile):
+
   image_uploaded = False
-  if not imageExists(imagefile):
+  imageID = getImageID(imagefile)
+  if imageID is None:
     print("Not Image exists")
     parsed_name = parseImagename(imagefile)
-    uploadImage(imagefile)
+    logging.info(parsed_name)
+    projID = getOrCreateProject(parsed_name['project'])
+    datasetID = searchDS(parsed_name['dataset']) # getDatasetID(parsed_name['dataset'])
+    plateID = searchPlate(parsed_name['plate'])
+    screenID = None
+    if datasetID is None:
+      datasetID = createDataset(parsed_name['dataset'])
+      logging.info(datasetID)
+      linkDatasetToProj(datasetID, projID)
+    imageID = uploadImage(imagefile, datasetID)
+
   else:
-    print("Image exists")
- 
+    logging.info("Image exists, ImageID=" + str(imageID))
+    parsed_name = parseImagename(imagefile)
+    screenID = searchScreen(parsed_name['screen'])
+    if screenID is None:
+      screenID = createScreen(parsed_name['screen'])
+      logging.info(screenID)
+    plateID = searchPlate(parsed_name['plate'])
+    logging.info(plateID)
+    if plateID is None:
+      plateID = createPlate(parsed_name['plate'])
+      logging.info(plateID)
+      linkPlateToScreen(plateID, screenID)
+    #wellID = searchWell(parsed_name['well'])
+    #logging.info(wellID)
+    #if wellID is None:
+    #  wellID = createWell(parsed_name['well'], wellID)
+    #  logging.info(wellID)
+    wellID = 99
+    wellID = createWellSample(wellID, plateID, imageID)
+    logging.info(wellSampleID)
+
+
+  annotation = [["key1", "value1"],
+                ["key2", "value2"],
+                ["key3", "value3"]]
+
+  addMapAnnotation(imageID, annotation)
+
+
+
 
 try:
 
-  logging.basicConfig()
-  print ("Start script")
-  
-  # stdout_ = sys.stdout
-  # 
-  # stream = cStringIO.StringIO()
-  # #
-  # # Call other method writing out
-  # #
-  # sys.stdout = stdout_ # restore the previous stdout.
-  # variable = stream.getvalue() # get the other method stdout
+  #logging.basicConfig(level=logging.INFO)
+  logging.getLogger("omero").setLevel(logging.WARNING)
+  logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+    datefmt='%H:%M:%S',
+    level=logging.INFO)
+  logging.info("Start script")
 
-  print(os.environ["PYTHONPATH"])
-#  password = os.environ['OMERO_DEV_PASSW']
-#  with cli_login("--server","localhost","--port", "4064", "--user","root", "--password", password ) as cli:
-#    
-#    
-#    uploadImageUnique(
-#    
-#    cli.invoke("import --help")
-#
-#    args = ["--quiet",
-#            "obj",
-#            "new",
-#            "Project",
-#            "name=NewImages"
-#           ]
-#    retval = cli.invoke(args)
-#    cli.out("Hello")
-#    print("retval=", retval)
-#    
-#        
-#    args = ["search",
-#            "Project",
-#            "NewImages",
-#            "--style",
-#            "json",
-#           ]
-#    retval = cli.invoke(args)
-#    print("retval=", retval)
-#    
-#    args = ["search",
-#            "Image",
-#            "181214*",
-#            #"--style",
-#            #"json",
-#           ]
-#    retval = cli.invoke(args)
-#    print("retval=", retval)
-    
-    
-   
-  image_dir = "/share/mikro/IMX/"
+  logging.info(os.environ["PYTHONPATH"])
+
+  image_dir = "/share/mikro/IMX/MDC Polina Georgiev/exp-WIDE"
   for filename in os.listdir(image_dir):
-    print filename
-    
+    logging.info(filename)
+
     # Search for filename (path and file suffix not included in search)
     filepath = os.path.join(image_dir, filename)
     uploadImageUnique(filepath)
-   
-    #args = ["import",
-    #         "--quiet",
-    #         "--transfer", "ln_s",
-    #         "--skip","all",
-    #         "-T", "Dataset:name:New-Dataset",
-    #         filename]
-    #
-    #retval = cli.invoke(args)
-    #print("retval=", retval)
 
-  ## Put the images into a Dataset
-  #DATASET = 52
-  #links = []
-  #for p in rsp.pixels:
-  #    print ('Looping the Imported Images, ID:', p.image.id.val)
-  #    link = omero.model.DatasetImageLinkI()
-  #    link.parent = omero.model.DatasetI(DATASET, False)
-  #    link.child = omero.model.ImageI(p.image.id.val, False)
-  #    links.append(link)
-
-  #conn.getUpdateService().saveArray(links, conn.SERVICE_OPTS)
 
 finally:
-  print ("Done script")
+  logging.info("Done script")
