@@ -3,7 +3,8 @@
 
 ## Prerequisites
 
-**docker** and **docker-compose**
+  - docker
+  - docker-compose
 
 
 Clone this repo:
