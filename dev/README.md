@@ -32,8 +32,8 @@ The present working directory (PWD) is mounted inside the omero-server-
 container as `/scripts` 
 This makes all edits in the `./import-images-omero-v1.py` reflected inside omero-server container
 
-**OBS, note that it might take some time before servers are up, and then you might get a connection error from script, e.g. `Exception: Ice.SocketException:
-Cannot assign requested address`**
+**OBS**, note that it might take some time before servers are up, and then you might get a connection error from script, e.g. `Exception: Ice.SocketException:
+Cannot assign requested address`
 
      docker exec -it omero-server-dev /scripts/import-images-omero-v1.py
      
