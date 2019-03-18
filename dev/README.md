@@ -1,5 +1,21 @@
 # Development setup for our OMERO-server python 2.7 scripts
 
+
+## Prerequisites
+
+**docker** and **docker-compose**
+
+
+Clone this repo:
+
+     git clone https://github.com/pharmbio/omero.git
+     
+     
+Enter dev sub-directory:
+
+     cd omero/dev/
+
+
 Start development version of omero-server, omero-web, and postgres
 
      docker-compose up -d
