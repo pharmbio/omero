@@ -15,17 +15,13 @@
 #
 #
 # docker-compose up
-# docker exec -it omero-server-dev bash
+# docker exec -it omero-server-dev /scripts/import-images-omero-v1.py
 #
 # Python path
 # export PYTHONPATH=$PYTHONPATH:/home/anders/projekt/pharmbio/OMERO/dev/OMERO.server-5.4.10-ice36-b105/lib/python
 # export PYTHONPATH=$PYTHONPATH:/opt/omero/server/OMERO.server/lib/python/
 # export OMERO_DEV_PASSW=devpass
 # /scripts/import-images-omero-v1.py
-
-
-#import sys
-#sys.path.append('/home/anders/projekt/pharmbio/OMERO/dev/OMERO.server-5.4.10-ice36-b105/lib/python')
 
 import platform
 import os
@@ -415,59 +411,53 @@ def add_plate_metadata(images, conn):
     image_v2.linkAnnotation(map_ann)
 
 try:
-
+  
+  # 
+  # Configure logging
+  #
   #logging.basicConfig(level=logging.INFO)
   logging.getLogger("omero").setLevel(logging.WARNING)
   logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
     datefmt='%H:%M:%S',
     level=logging.DEBUG)
+    
   logging.info("Start script")
 
-  logging.info(os.environ["PYTHONPATH"])
-
   proj_image_dir = "/share/mikro/IMX/MDC Polina Georgiev/exp-WIDE/"
-
   last_mod_date = getLastModificationInDir(proj_image_dir, '*')
-  logging.info("last mod:" + str(last_mod_date))
 
+  # Get connection to server
   conn = getOmeroConn()
 
-  # Get all subdirs (this is screen-plate dir)
+  # Get all subdirs (these are the top plate dir)
   plate_dirs = get_subdirs(proj_image_dir)
   for plate_dir in plate_dirs:
     plate_subdirs = get_subdirs(plate_dir)
     for plate_date_dir in plate_subdirs:
-      logging.debug("plate_subdir:" + str(plate_date_dir))
+      logging.debug("plate_subdir: " + str(plate_date_dir))
       rel_plate_date_dir = relpath(plate_date_dir, proj_image_dir)
-      logging.debug("rel_plate_subdir:" + str(rel_plate_date_dir))
+      
+      # Parse filename for metadata (e.g. platename well, site, channet etc.)
       metadata = parse_path_plate_date(rel_plate_date_dir)
       logging.debug("metadata" + str(metadata))
 
       # Check if plate exists in database (if no - then import folder)
-      # TODO (and aquisition-date)
+      #
+      # TODO (and aquisition-date?)
       #
       # TODO create screen?
       #
       plate_ID = getPlateID(conn, metadata['plate'])
       if plate_ID is None:
+        # import images and create database entries for plate, well, site etc.
         import_plate_images_and_meta(plate_date_dir, conn)
 
         # TODO annotate plate to screen
 
-
       else:
-		import_plate_images_and_meta(plate_date_dir, conn)
-		logging.info("Plate already in DB: " + metadata['plate']);
-		sys.exit("#Exit here")
+		    logging.info("Plate already in DB: " + metadata['plate']);
+		    sys.exit("# Exit here")
 
-
-
-  #for filename in os.listdir(image_dir):
-  #  logging.info(filename)
-  #
-  #  # Search for filename (path and file suffix not included in search)
-  #  filepath = os.path.join(image_dir, filename)
-  #  uploadImageUnique(filepath)
 
 finally:
   conn.close()
