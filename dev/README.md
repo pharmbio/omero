@@ -22,7 +22,7 @@ and see when servers have started, then you dont have to run docker compose with
 
      docker-compose up
      
-The folder `../share/mikro/` (with a small test-dataset of images is bind-mounted to the omero-server container)
+The folder `./share/mikro/` (with a small test-dataset of images is bind-mounted to the omero-server container)
      
 Edit scripts as you please
 
