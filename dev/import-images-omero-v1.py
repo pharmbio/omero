@@ -391,6 +391,12 @@ def add_plate_metadata(images, conn):
       well.setPlate(plate)
       well = conn.getUpdateService().saveAndReturnObject(well)
       last_well_name = well_name
+    else:
+      well = conn.getObject("Well", well.id.val)
+      # Force WellWrapper to load wellsamples for this well
+      well._listChildren()
+      # we want the wrapped omero.model.WellI object
+      well = well._obj
 
     # Create Wellsamples (one for each picture, each channel is stored as a separate wellsampla=
     wellsample_name = img_meta['wellsample']
