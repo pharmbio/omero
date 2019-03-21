@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 
-#
+# Code inspiration:
 # Code from: https://gist.github.com/will-moore/f5402e451ea471fd05893f8b38a077ce
 # from http://www.openmicroscopy.org/community/viewtopic.php?f=6&t=8407
 # Uses code from https://github.com/openmicroscopy/openmicroscopy/blob/develop/components/tools/OmeroPy/src/omero/testlib/__init__.py
@@ -8,7 +8,7 @@
 # https://docs.openmicroscopy.org/omero/5.4.10/users/cli/containers-annotations.html
 # https://docs.openmicroscopy.org/omero/5.4.10/developers/Python.html
 
-# API
+# API:
 # https://downloads.openmicroscopy.org/omero/5.4.10/api/python/
 #
 # https://docs.openmicroscopy.org/omero/5.4.10/developers/Model/EveryObject.html#omero-model-class-wellsample
@@ -22,6 +22,14 @@
 # export PYTHONPATH=$PYTHONPATH:/opt/omero/server/OMERO.server/lib/python/
 # export OMERO_DEV_PASSW=devpass
 # /scripts/import-images-omero-v1.py
+#
+# CLI examples:
+#
+# /opt/omero/server/OMERO.server/bin/omero search Plate "P00904*"
+#
+# /opt/omero/server/OMERO.server/bin/omero import --bulk P009041_bulk.yml --server localhost --port 4064 --user root --password devpass
+
+#
 
 import platform
 import os
@@ -31,6 +39,7 @@ import datetime
 import time
 import fnmatch
 import logging
+import traceback
 import sys
 import cStringIO
 import json
@@ -118,7 +127,7 @@ def parse_path_and_file(path):
   return metadata
 
 #
-# Executes a command with the omero-cli program /...server.../bin/omero
+# Executes a command with the omero-cli program /opt/omero/server/OMERO.server/bin/omero
 # Method redirects stdout so return values on stdout can be read in Python
 #
 def execOmeroCommand(args):
@@ -199,14 +208,14 @@ def getID_v1(conn, obj_types, text, fields):
   if len(result) > 1:
     raise Exception('Get ID returned more than 1 results')
   return result.getId()
-  
+
 #
 # Older version of search (it is not working as expected, returning
 # more than one result even if perfect match only should return one
 #
 def getPlateID_v1(conn, name):
   return getID(conn, ["Plate"], name, fields=("name",))
-  
+
 
 #
 # Searches with OMERO findAllByQuery method
@@ -323,7 +332,9 @@ def import_plate_images_and_meta(plate_subdir, conn):
       raise Exception('Image ' + str(image) + ' that is in import-list is in database already.')
 
   # Import directory
-  uploadImages(all_images)
+ # uploadImages(all_images)
+
+  uploadImages([plate_subdir])
 
   # Add metadata
   add_plate_metadata(all_images, conn)
@@ -443,8 +454,8 @@ def add_plate_metadata(images, conn):
 conn = None
 
 try:
-  
-  # 
+
+  #
   # Configure logging
   #
   #logging.basicConfig(level=logging.INFO)
@@ -452,7 +463,7 @@ try:
   logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
     datefmt='%H:%M:%S',
     level=logging.DEBUG)
-    
+
   logging.info("Start script")
 
   proj_image_dir = "/share/mikro/IMX/MDC Polina Georgiev/exp-WIDE/"
@@ -469,7 +480,7 @@ try:
     for plate_date_dir in plate_subdirs:
       logging.debug("plate_subdir: " + str(plate_date_dir))
       rel_plate_date_dir = relpath(plate_date_dir, proj_image_dir)
-      
+
       # Parse filename for metadata (e.g. platename well, site, channet etc.)
       metadata = parse_path_plate_date(rel_plate_date_dir)
       logging.debug("metadata" + str(metadata))
@@ -492,10 +503,10 @@ try:
 		    sys.exit("# Exit here")
 
 except Exception as e:
-  print(e)
-  
+  print(traceback.format_exc())
+
 finally:
   if conn is not None:
     conn.close()
-    
+
   logging.info("Done script")
