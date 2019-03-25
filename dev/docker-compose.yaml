@@ -16,6 +16,7 @@ services:
   postgres:
     image: postgres:10.7
     restart: "no"
+    container_name: omero-postgres-dev
     ports:
       - 5432:5432
     volumes:

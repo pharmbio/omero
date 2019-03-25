@@ -16,6 +16,8 @@
 #
 # docker-compose up
 # docker exec -it omero-server-dev /scripts/import-images-omero-v1.py
+# docker exec -it omero-server-dev /scripts/import_screen_bulk.sh
+# docker exec -it omero-server-dev /scripts/import_screen_pattern.sh
 #
 # Python path
 # export PYTHONPATH=$PYTHONPATH:/home/anders/projekt/pharmbio/OMERO/dev/OMERO.server-5.4.10-ice36-b105/lib/python
@@ -23,12 +25,16 @@
 # export OMERO_DEV_PASSW=devpass
 # /scripts/import-images-omero-v1.py
 #
+# Enter docker images
+# docker exec -it omero-server-dev bash
+# docker exec -it omero-postgres-dev bash -c 'psql -U postgres'
+#
 # CLI examples:
 #
 # /opt/omero/server/OMERO.server/bin/omero search Plate "P00904*"
 #
 # /opt/omero/server/OMERO.server/bin/omero import --bulk P009041_bulk.yml --server localhost --port 4064 --user root --password devpass
-
+#
 #
 
 import platform
@@ -43,6 +49,7 @@ import traceback
 import sys
 import cStringIO
 import json
+import yaml
 
 import omero
 from omero.gateway import BlitzGateway
@@ -51,18 +58,6 @@ from omero.rtypes import rstring, rint, rdouble, rtime
 
 # read password from environment
 omero_rootpass = os.environ['ROOTPASS']
-
-#
-# Adopted from: https://github.com/HASTE-project/haste-image-analysis-container2/tree/master/haste/image_analysis_container2/filenames
-# path example
-# 'ACHN-20X-P009060/2019-02-19/and-more/not/needed/'
-__pattern_path_plate_date = re.compile('^'
-                            + '([^-]+)'  # screen-name (1)
-                            + '-([^-]+)'  # magnification (2)
-                            + '-([^/]+)'  # plate (3)
-                            + '/([^/]+)'  # date (4)
-                            ,
-                            re.IGNORECASE)  # Windows has case-insensitive filenames
 
 # Adopted from: https://github.com/HASTE-project/haste-image-analysis-container2/tree/master/haste/image_analysis_container2/filenames
 # file example
@@ -78,28 +73,11 @@ __pattern_path_and_file   = re.compile('^'
                             + '_s([^_]+)'  # wellsample (8)
                             + '_w([0-9]+)' # Channel (color channel?) (9)
                             + '(_thumb)?'  # Thumbnail (10)
-                            #+ '.*\.'      # any until last . Image GUID
-                            #+ '(\.tiff?)?'  # Extension (11)
-                            #+ '$'
+                            + '([A-Z0-9]{8}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{12})'  # Image GUID [11]
+                            + '(\.tiff?)?'  # Extension [12]
+                            + '$'
                             ,
                             re.IGNORECASE)  # Windows has case-insensitive filenames
-
-
-def parse_path_plate_date(path):
-  match = re.search(__pattern_path_plate_date, path)
-
-  if match is None:
-    return None
-
-  metadata = {
-    'screen': match.group(1),
-    'magnification': match.group(2),
-    'plate': match.group(3),
-    'date': match.group(4),
-
-  }
-
-  return metadata
 
 def parse_path_and_file(path):
   match = re.search(__pattern_path_and_file, path)
@@ -120,11 +98,40 @@ def parse_path_and_file(path):
     'wellsample': match.group(8),
     'color_channel': int(match.group(9)),
     'is_thumbnail': match.group(10) is not None,
-    #'guid': match.group(11),
-    #'extension': match.group(12),
+    'guid': match.group(11),
+    'extension': match.group(12),
   }
 
   return metadata
+
+#
+# Adopted from: https://github.com/HASTE-project/haste-image-analysis-container2/tree/master/haste/image_analysis_container2/filenames
+# path example
+# 'ACHN-20X-P009060/2019-02-19/and-more/not/needed/'
+__pattern_path_plate_date = re.compile('^'
+                            + '([^-]+)'  # screen-name (1)
+                            + '-([^-]+)'  # magnification (2)
+                            + '-([^/]+)'  # plate (3)
+                            + '/([^/]+)'  # date (4)
+                            ,
+                            re.IGNORECASE)  # Windows has case-insensitive filenames
+
+def parse_path_plate_date(path):
+  match = re.search(__pattern_path_plate_date, path)
+
+  if match is None:
+    return None
+
+  metadata = {
+    'screen': match.group(1),
+    'magnification': match.group(2),
+    'plate': match.group(3),
+    'date': match.group(4),
+
+  }
+
+  return metadata
+
 
 #
 # Executes a command with the omero-cli program /opt/omero/server/OMERO.server/bin/omero
@@ -174,6 +181,19 @@ def uploadImages(file_list):
     filename = os.path.basename(filepath)
     result = uploadImage(filepath)
     logging.debug(result)
+
+#
+def upload_images_bulk(bulk_import_file):
+
+  args = ["import",
+          "--quiet",
+          "--skip", "minmax",
+          "--skip", "thumbnails",
+          "--bulk",
+          bulk_import_file
+          ]
+
+  result = execOmeroCommand(args)
 
 #
 # Create a connection to server (This is for commands that are executed
@@ -284,12 +304,8 @@ def get_subdirs(root_path):
 def get_all_valid_images(path):
   all_files = recursive_glob(path, '*')
 
-  logging.debug("all_files:" + str(all_files))
-
   pattern_file_filter = re.compile('^(?!.*thumb)(?=.*tif|.*jpg)') # not "thumb" but contains tif or jpg
   filtered_files = filter(pattern_file_filter.match, all_files)
-
-  logging.debug("filtered_files:" + str(filtered_files))
 
   return filtered_files
 
@@ -321,9 +337,9 @@ def dictToMapAnnotation(d):
 def image_name_sort_fn(filename):
   return filename
 
-def import_plate_images_and_meta(plate_subdir, conn):
-  logging.debug("start import_plate_images_and_meta:" + str(plate_subdir))
-  all_images = get_all_valid_images(plate_subdir)
+def import_plate_images_and_meta(plate_date_dir, pattern_plate_date_dir, conn):
+  logging.debug("start import_plate_images_and_meta:" + str(plate_date_dir))
+  all_images = get_all_valid_images(plate_date_dir)
 
   # Check that no image is in database already
   for image in all_images:
@@ -331,14 +347,20 @@ def import_plate_images_and_meta(plate_subdir, conn):
     if image_ID is not None:
       raise Exception('Image ' + str(image) + ' that is in import-list is in database already.')
 
-  # Import directory
- # uploadImages(all_images)
+  # Create bulk import file
+  create_image_import_pattern_files(plate_date_dir, pattern_plate_date_dir, all_images)
 
-  uploadImages([plate_subdir])
+  bulk_import_file = create_bulk_import_file(pattern_plate_date_dir)
+
+  # Import directory
+  upload_images_bulk(bulk_import_file)
 
   # Add metadata
-  add_plate_metadata(all_images, conn)
+  add_plate_metadata(pattern_plate_date_dir, conn)
 
+def create_bulk_import_file(pattern_plate_date_dir):
+  logging.info("start create bulk file")
+  pattern_files = recursive_glob(pattern_plate_date_dir, '*.pattern')
 
 def add_plate_metadata(images, conn):
   logging.info("start add_plate_metadata")
@@ -376,6 +398,7 @@ def add_plate_metadata(images, conn):
   well = None
   last_well_name = None
   wellsample = None
+  last_well_name = None
   for image in images:
     img_meta = parse_path_and_file(image)
 
@@ -384,7 +407,8 @@ def add_plate_metadata(images, conn):
     # not filled in and Error will be thrown later when image methods are used
     qs = conn.getQueryService()
     params = omero.sys.Parameters()
-    params.map = {'imagename': rstring(os.path.basename(image))}
+    image_name = os.path.splitext(os.path.basename(image))[0]
+    params.map = {'imagename': rstring(image_name)}
     logging.debug(params.map)
     # TODO change from findAllByQuery to findAllByQuery and only one return
     images = qs.findAllByQuery("from Image as i where i.name=:imagename", params)
@@ -393,7 +417,7 @@ def add_plate_metadata(images, conn):
     well_name = img_meta['well']
     # Create Well, only if the well-name is different from the last image well-name
     if well is None or last_well_name != well_name:
-      well = omero.model.WellI()
+      well = omero.model.get_all_valid_pattern_filesWellI()
       well.setExternalDescription(rstring(well_name))
       row_col = well_label2row_col(well_name)
       logging.info(row_col)
@@ -446,6 +470,105 @@ def add_plate_metadata(images, conn):
 
 #
 #
+# ACHN-20X-P009060_G11_s9_w52B1ACE5F-5E6A-4AEC-B227-016795CE2297.tif
+#
+def create_image_import_pattern_files(plate_date_dir, pattern_plate_date_dir, images):
+  logging.info("start create_image_import_pattern_files" + plate_date_dir)
+
+  # sort images with image_name_sort_fn
+  # makes sure well, wellsample and channels come sorted
+  # after each other when looping the list
+  sorted(images, key=image_name_sort_fn)
+
+
+  # Loop all Images
+  wellsample = None
+  last_wellsample = None
+  channel_and_uuid = []
+  for image in images:
+    img_meta = parse_path_and_file(image)
+
+    wellsample = img_meta['wellsample']
+
+    channel_and_uuid.append(str(img_meta['color_channel']) + img_meta['guid'])
+    pattern_file = None
+    pattern = None
+    # For each wellsample(site) create a pattern file with all channels
+    if wellsample is None or last_wellsample != wellsample:
+      # start over with new uuids
+      wellsample_and_uuid = []
+
+    # create patterns file name by replacing root dir with rootdir + patterns_subdir
+    pattern_file_path = str(os.path.dirname(image)).replace(plate_date_dir, pattern_plate_date_dir)
+
+    logging.debug("pattern_file_path:" + str(pattern_file_path))
+
+    #
+    pattern_file_name = ( img_meta['screen'] + "-" +
+                        img_meta['magnification'] + "-" +
+                        img_meta['plate'] + "_" +
+                        img_meta['well'] + "_" +
+                        "s" + str(img_meta['wellsample']) +
+                        ".pattern" )
+
+    pattern_file = os.path.join(pattern_file_path, pattern_file_name)
+
+    logging.debug("pattern_file:" + str(pattern_file))
+
+    #
+    image_path = str(os.path.dirname(image))
+    pattern = (image_path + "/" +
+              img_meta['screen'] + "-" +
+              img_meta['magnification'] + "-" +
+              img_meta['plate'] + "_" +
+              img_meta['well'] + "_" +
+              "s" + str(img_meta['wellsample']) +
+              "_w<" + ",".join(sorted(channel_and_uuid)) + ">" + img_meta['extension'] )
+
+
+    # Create dir if not there
+    if not os.path.exists(os.path.dirname(pattern_file)):
+      os.makedirs(os.path.dirname(pattern_file))
+    with open(pattern_file, 'w') as f:
+      f.write(pattern)
+
+    last_wellsample = wellsample
+
+def create_bulk_import_file(pattern_plate_date_dir):
+  logging.info("start create bulk file")
+  pattern_files = recursive_glob(pattern_plate_date_dir, '*.pattern')
+  pattern_files_tsv = os.path.join(pattern_plate_date_dir, "pattern_files.tsv")
+  bulk_import_file = os.path.join(pattern_plate_date_dir, "bulk_import.yml")
+
+  with open(pattern_files_tsv, 'w') as f:
+    for pattern_file in pattern_files:
+      image_name = os.path.splitext(os.path.basename(pattern_file))[0]
+      line = '{name}\t{path}\n'.format(name=image_name, path=pattern_file)
+      f.write(line)
+
+  #  bulk_yml = ( '---' + '\n' +
+  #               'transfer: = "ln_s"' + '\n' +
+  #               'checksum_algorithm: "File-Size-64"' +
+  #               'path: "/scripts/P009041.tsv"
+
+  bulk_yml = dict(transfer = 'ln_s',
+                  checksum_algorithm = 'File-Size-64',
+                  path = pattern_files_tsv,
+                  #skip = 'all',
+                  columns = [
+                            'name',
+                            'path'
+                            ]
+                 )
+
+  with open(bulk_import_file, 'w') as f:
+    yaml.dump(bulk_yml, f, default_flow_style=False)
+
+  return bulk_import_file
+
+
+#
+#
 #
 #  Main entry for script
 #
@@ -466,23 +589,29 @@ try:
 
   logging.info("Start script")
 
-  proj_image_dir = "/share/mikro/IMX/MDC Polina Georgiev/exp-WIDE/"
-  last_mod_date = getLastModificationInDir(proj_image_dir, '*')
+  proj_root_dir = "/share/mikro/IMX/MDC Polina Georgiev/exp-WIDE/"
+  pattern_root_dir = os.path.join(proj_root_dir, "import-patterns/")
+
+  last_mod_date = getLastModificationInDir(proj_root_dir, '*')
+
+
 
   # Get connection to server
   conn = getOmeroConn()
 
   # Get all subdirs (these are the top plate dir)
-  plate_dirs = get_subdirs(proj_image_dir)
+  plate_dirs = get_subdirs(proj_root_dir)
   logging.debug("plate_dirs" + str(plate_dirs))
   for plate_dir in plate_dirs:
     plate_subdirs = get_subdirs(plate_dir)
     for plate_date_dir in plate_subdirs:
       logging.debug("plate_subdir: " + str(plate_date_dir))
-      rel_plate_date_dir = relpath(plate_date_dir, proj_image_dir)
+
+      # create patterns dir name by replacing root dir with patterns root dir
+      pattern_plate_date_dir = str(plate_date_dir).replace(proj_root_dir, pattern_root_dir)
 
       # Parse filename for metadata (e.g. platename well, site, channet etc.)
-      metadata = parse_path_plate_date(rel_plate_date_dir)
+      metadata = parse_path_plate_date(plate_date_dir)
       logging.debug("metadata" + str(metadata))
 
       # Check if plate exists in database (if no - then import folder)
@@ -494,7 +623,7 @@ try:
       plate_ID = getPlateID(conn, metadata['plate'])
       if plate_ID is None:
         # import images and create database entries for plate, well, site etc.
-        import_plate_images_and_meta(plate_date_dir, conn)
+        import_plate_images_and_meta(plate_date_dir, pattern_plate_date_dir, conn)
 
         # TODO annotate plate to screen
 
