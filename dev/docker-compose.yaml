@@ -11,6 +11,13 @@ volumes:
       type: none
       device: "${PWD}/share/mikro"
       o: bind
+  omero-write-bind-dev:
+    driver: local
+    driver_opts:
+      type: none
+      device: "${PWD}/share/mikro_testdata"
+      o: bind
+
 
 services:
   postgres:
@@ -41,6 +48,7 @@ services:
     volumes:
       - omero-data-dev:/OMERO
       - omero-data-bind-dev:/share/mikro
+      - omero-write-bind-dev:/share/mikro_testdata
       - ${PWD}:/scripts
     environment:
       - CONFIG_omero_db_user=postgres
