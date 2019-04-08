@@ -8,6 +8,5 @@ path: "/scripts/P009041.tsv"
 # Default columns for the regular screens.
 # This may need to be modified in other bulk files.
 columns:
-    - target
     - path
     - name
